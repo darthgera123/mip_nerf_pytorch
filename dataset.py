@@ -11,22 +11,26 @@ from rays import get_rays, get_ray_directions
 
 
 class NerfData(Dataset):
-	def __init__(self, data_dir, split='train', scale=1):
+	def __init__(self, data_dir, width,height,split='train',):
 		self.images_dir = data_dir
-		self.scale = scale
-		self.width = 800//scale
-		self.height = 800//scale
+		# self.scale = scale
+		self.width = width
+		self.height = height
 		self.split = split
 		self._read_meta(data_dir, split)
 
 		# Needed for alpha compositing the points on ray
 		self.white_back = True
-		
+		# For train the sample is ray and corresponding pixel value
+		# for test and val return all rays and image
 	def __len__(self):
 		if self.split == 'train':
-			return len(os.listdir(os.path.join(self.images_dir,self.split)))
-		else:
+			return len(self.all_images)
+			
+		elif self.split == 'val':
 			return 8
+		else:
+			return len(os.listdir(os.path.join(self.images_dir,self.split)))
 
 	def _read_meta(self, path, split):
 		self.data = json.load(
@@ -81,10 +85,10 @@ class NerfData(Dataset):
 				img = img[:, :3]*img[:, -1:]+(1-img[:, -1:])  # Blend A to RGB
 
 				rays_o, rays_d = get_rays(self.directions, c2w)
-				rays_t = t*torch.ones(len(rays_o), 1)
+				# rays_t = t*torch.ones(len(rays_o), 1)
 
 				rays = torch.cat([rays_o, rays_d, self.near*torch.ones_like(rays_o[:, :1]),\
-									self.far*torch.ones_like(rays_o[:, :1]), rays_t],axis=1)  # (h*w,9)
+									self.far*torch.ones_like(rays_o[:, :1])],axis=1)  # (h*w,8)
 				
 				self.all_rays.append(rays)
 
@@ -92,12 +96,11 @@ class NerfData(Dataset):
 
 			self.all_rays = torch.cat(self.all_rays, 0)  # (len(self.data)*h*w,3)
 			self.all_images = torch.cat(self.all_images, 0)  # (len(self.data)*h*w,3)
-			
+			print(self.all_images.shape)
 
 	def __getitem__(self, index):
 		if self.split == 'train':
-			sample = {'rays': self.all_rays[index, :8],
-						'ts': self.all_rays[index, 8].long(),
+			sample = {'rays': self.all_rays[index],
 						'images': self.all_images[index]}
 		else:
 			frame = self.data[index]
@@ -116,7 +119,7 @@ class NerfData(Dataset):
 			rays = torch.cat([rays_o, rays_d, self.near*torch.ones_like(rays_o[:, :1]),\
 									self.far*torch.ones_like(rays_o[:, :1])],axis=1)   # (H,W,8)
 			t = 0
-			sample = {'rays': rays, 'ts': t*torch.ones(len(rays), dtype=torch.long),
+			sample = {'rays': rays,
 						'images': img, 'c2w': c2w, 'valid_mask': valid_mask}
 
 		return sample
@@ -127,8 +130,8 @@ if __name__ == '__main__':
 	parser.add_argument('--image_dir', type=str, default='pinecone_dr.xml')
 	parser.add_argument('--split', type=str, default='pinecone_dr.xml')
 	args = parser.parse_args()
-	train_data = NerfData(args.image_dir,args.split)
+	train_data = NerfData(args.image_dir,400,400,args.split)
 	print(train_data.__len__())
-	print(train_data.__getitem__(42))
+	print(train_data.__getitem__(42)['images'])
 
 
