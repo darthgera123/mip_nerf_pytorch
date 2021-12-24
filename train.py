@@ -58,9 +58,9 @@ if __name__ == '__main__':
 
 	#train loop
 	for epoch in tqdm(range(hparams.num_epochs)):
-
+		train_loss = 0
 		with torch.no_grad():
-			for samples in tqdm(train_dataloader):
+			for samples in tqdm(train_dataloader,,desc=f'Train: Epoch {epoch}'):
 				rays,image_pixel = samples['rays'],samples['images'] #(B,8) (B,3)
 				rays,image_pixel = rays.to(device),images.to(device)
 				B = rays.shape[0]
@@ -69,7 +69,7 @@ if __name__ == '__main__':
 					rendered_ray_chunks = rendering(models,embdedding,rays[i:i+hparams.chunk],
 													hparams.N_samples,hparams.use_disp,
 													hparams.pertub,hparams.noise_std,hparams.N_importance,
-													hparams.chunk,train_dataset.white_back)
+													hparams.chunk,train_data.white_back)
 					for k,v in rendered_ray_chunks.items():
 						results[k] += [v]
 
@@ -77,7 +77,38 @@ if __name__ == '__main__':
 				for k,v in results.items():
 					results[k] = torch.cat(v,0)
 
-				loss = criterion(results,image_pixel)
+				loss_d = criterion(results,image_pixel)
+				loss = sum(l for l in loss_d.values())
+
+				psnr_ = psnr(results['rgb_fine'],image_pixel)
+				train_loss += loss.item()
+			print("Train Loss",train_loss)
+
+		models['coarse'].eval()
+		models['fine'].eval()
+		val_loss = 0
+		for samples in tqdm(val_dataloader,desc=f'Val: Epoch {epoch}'):
+			rays,image_pixel = samples['rays'],samples['images']
+			rays, image_pixel = rays.to(device),images.to(device)
+			B = rays.shape[0]
+			results = defaultdict(list)
+			for i in range(0,B,hparams.chunk):
+				rendered_ray_chunks = rendering(models,embdedding,rays[i:i+hparams.chunk],
+												hparams.N_samples,hparams.use_disp,hparams.pertub,
+												hparams.noise_std,hparams.N_importance,hparams.chunk,
+												val_data.white_back)
+				for k,v in rendered_ray_chunks.items():
+					results[k] += [v]
+
+			for k,v in results.items():
+				results[k] = torch.cat(v,0)
+
+			loss_d = criterion(results,image_pixel)
+			loss = sum(l for l in loss_d.values())
+			val_loss += loss.item()
+		print("Val Loss",val_loss)
+
+
 				
 
 

@@ -11,7 +11,6 @@ class PosEmbedding(nn.Module):
 			self.freqs = 2**torch.linspace(0,max_logscale,N_freqs)
 		else:
 			self.freqs = torch.linspace(1,2**max_logscale,N_freqs)
-		print(self.freqs)
 
 	def forward(self,x):
 		"""
