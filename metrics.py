@@ -9,7 +9,7 @@ def mse(image_pred,image_gt,valid_mask=None,reduction='mean'):
 		return torch.mean(value)
 	return value
 
-def psnr(image_pred,image_gt,valid_mask,reduction='mean'):
+def psnr(image_pred,image_gt,valid_mask=None,reduction='mean'):
 	return -10*torch.log10(mse(image_pred,image_gt,valid_mask,reduction))
 
 def ssim(image_pred,image_gt,reduction='mean'):

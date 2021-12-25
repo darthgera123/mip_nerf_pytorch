@@ -3,11 +3,19 @@ import argparse
 def get_opts():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--root_dir', type=str,
-                        default='/scratch/darthgera123/nerf_synthetic/lego',
+    parser.add_argument('--image_dir', type=str,
+                        default='/scratch/aakash.kt/nerf_synthetic/lego',
                         help='root directory of dataset')
-    parser.add_argument('--img_width', type=int, default=[400, 400],
+    parser.add_argument('--img_width', type=int, default=400,
                         help='resolution (img_w, img_h) of the image')
+    parser.add_argument('--img_height', type=int, default=400,
+                        help='resolution (img_w, img_h) of the image')
+
+    parser.add_argument('--ckpt_dir', type=str, default=None,
+                        help='pretrained checkpoint path to load')
+    parser.add_argument('--log_dir', type=str, default=None,
+                        help='pretrained checkpoint path to load')
+    
     
     parser.add_argument('--N_samples', type=int, default=64,
                         help='number of coarse samples')
@@ -27,7 +35,7 @@ def get_opts():
                         help='embed_xyz')
     parser.add_argument('--embed_dir', type=int, default=4,
                         help='embed_dir')
-    parser.add_argument('--chunk', type=int, default=32*1024,
+    parser.add_argument('--chunk', type=int, default=64*1024,
                         help='chunk size to split the input to avoid OOM')
     parser.add_argument('--num_epochs', type=int, default=16,
                         help='number of training epochs')
@@ -42,5 +50,9 @@ def get_opts():
 
     parser.add_argument('--exp_name', type=str, default='exp',
                         help='experiment name')
+    parser.add_argument('--refresh_every', type=int, default=1,
+                        help='print the progress bar every X steps')
+    parser.add_argument('--num_gpus', type=int, default=1,
+                        help='number of gpus')
 
     return parser.parse_args()

@@ -65,6 +65,7 @@ class NerfData(Dataset):
 		if self.split == 'train':
 			self.all_rays = []
 			self.all_images = []
+			self.all_valid_masks = []
 			for t, frame in enumerate(self.data):
 				pose = np.array(frame['transform_matrix'])[:3, :4]
 				c2w = torch.FloatTensor(pose)
@@ -93,15 +94,18 @@ class NerfData(Dataset):
 				self.all_rays.append(rays)
 
 				self.all_images.append(img)
+				self.all_valid_masks.append(valid_mask)
 
 			self.all_rays = torch.cat(self.all_rays, 0)  # (len(self.data)*h*w,3)
 			self.all_images = torch.cat(self.all_images, 0)  # (len(self.data)*h*w,3)
-			print(self.all_images.shape)
+			# self.all_valid_masks = torch.cat(self.all_valid_masks,0)
+			# print(self.all_images.shape)
 
 	def __getitem__(self, index):
 		if self.split == 'train':
 			sample = {'rays': self.all_rays[index],
-						'images': self.all_images[index]}
+						'images': self.all_images[index],
+						}
 		else:
 			frame = self.data[index]
 			image_path = os.path.join(self.images_dir, f"{frame['file_path']}.png")
@@ -118,7 +122,6 @@ class NerfData(Dataset):
 
 			rays = torch.cat([rays_o, rays_d, self.near*torch.ones_like(rays_o[:, :1]),\
 									self.far*torch.ones_like(rays_o[:, :1])],axis=1)   # (H,W,8)
-			t = 0
 			sample = {'rays': rays,
 						'images': img, 'c2w': c2w, 'valid_mask': valid_mask}
 
@@ -132,6 +135,8 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	train_data = NerfData(args.image_dir,400,400,args.split)
 	print(train_data.__len__())
-	print(train_data.__getitem__(42)['images'])
+	print(train_data.__getitem__(42)['images'].squeeze().shape)
+	img = train_data.__getitem__(42)['images']
+	print(img.shape)
 
 
