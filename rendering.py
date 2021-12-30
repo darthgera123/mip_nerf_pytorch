@@ -48,6 +48,10 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
 
 
 def sample_points(rays, N_samples,perturb,use_disp):
+	"""
+	Given Rays the function samples points on the rays depending on the distribution
+	Use disparity if modeling foreground separately and background separately
+	"""
 	N_rays = rays.shape[0]
 	rays_o, rays_d = rays[:, 0:3], rays[:, 3:6] # both (N_rays, 3)
 	near, far = rays[:, 6:7], rays[:, 7:8] # both (N_rays, 1)
@@ -72,6 +76,11 @@ def sample_points(rays, N_samples,perturb,use_disp):
 	return z_vals
 
 def volumetric_rendering(z_vals,dir_,sigmas,noise_std):
+	"""
+	Volumteric Rendering from the samples obtained
+	Follow the equation. Delta is the diff of points samples
+	alphas are the rendered colors which are combined to give the pixel color
+	"""
 	deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
 	delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
 	deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
@@ -106,6 +115,9 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,chunk=1024*
             dir_: (N_rays, 3) ray directions
             dir_embedded: (N_rays, embed_dir_channels) embedded directions
             z_vals: (N_rays, N_samples_) depths of the sampled positions
+            chunk: The chunk for validation
+            noise_std: Augmentation for points sampling
+            white_back: Special case for white_back images
             weights_only: do inference on sigma only or not
 
         Outputs:
@@ -118,7 +130,6 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,chunk=1024*
         """
         
         N_rays,N_samples_,_  = xyz_.shape
-        # N_samples_ = xyz_.shape[1]
         # Embed directions
         xyz_ = xyz_.view(-1, 3) # (N_rays*N_samples_, 3)
         if not weights_only:
@@ -228,6 +239,7 @@ def rendering(models,
                   'depth_coarse': depth_coarse,
                   'opacity_coarse': weights_coarse.sum(1)
                  }
+    # Once we get sigmas from coarse model we use that as a prior for sampling the fine network
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
