@@ -6,9 +6,9 @@ def get_opts():
     parser.add_argument('--image_dir', type=str,
                         default='/scratch/aakash.kt/nerf_synthetic/lego',
                         help='root directory of dataset')
-    parser.add_argument('--img_width', type=int, default=400,
+    parser.add_argument('--img_width', type=int, default=200,
                         help='resolution (img_w, img_h) of the image')
-    parser.add_argument('--img_height', type=int, default=400,
+    parser.add_argument('--img_height', type=int, default=200,
                         help='resolution (img_w, img_h) of the image')
 
     parser.add_argument('--ckpt_dir', type=str, default=None,

@@ -58,7 +58,7 @@ class NerfData(Dataset):
 		https://ksimek.github.io/2013/08/13/intrinsic/
 		"""
 		# ray direction for all pixels will be same
-		self.directions = get_ray_directions(self.height, self.width, self.K)
+		self.directions = get_ray_directions(self.height, self.width, self.focal_length)
 		self.transform = T.ToTensor()
 
 		# cache all train data together. val and test data can be generate per image
@@ -126,7 +126,6 @@ class NerfData(Dataset):
 						'images': img, 'c2w': c2w, 'valid_mask': valid_mask}
 
 		return sample
-
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()

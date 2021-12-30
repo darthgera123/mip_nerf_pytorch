@@ -48,17 +48,20 @@ class NeRFSystem(LightningModule):
         dir_L = hparams.embed_dir
         self.embedding_xyz = PosEmbedding(3, 10) # 10 is the default number
         self.embedding_dir = PosEmbedding(3, 4) # 4 is the default number
-        # self.embeddings = [self.embedding_xyz, self.embedding_dir]
+        
         self.embeddings = {}
         self.embeddings['xyz'] = self.embedding_xyz
         self.embeddings['dir'] = self.embedding_dir
 
-        self.nerf_coarse = NeRF(types="coarse",density=8,width=256,skips=[4],in_channels_xyz=3+6*xyz_L,in_channels_dir=3+6*dir_L)
+        # self.nerf_coarse = NeRF(types="coarse",density=8,width=256,skips=[4],in_channels_xyz=3+6*xyz_L,in_channels_dir=3+6*dir_L)
+        self.nerf_coarse = NeRF()
         self.models = {}
-        self.models['coarse'] = self.nerf_coarse
+        self.models['coarse'] = self.nerf_coarse.cuda()
+
         if hparams.N_importance > 0:
-            self.nerf_fine = NeRF(types="fine",density=8,width=256,skips=[4],in_channels_xyz=3+6*xyz_L,in_channels_dir=3+6*dir_L)
-            self.models['fine'] = self.nerf_fine
+            # self.nerf_fine = NeRF(types="fine",density=8,width=256,skips=[4],in_channels_xyz=3+6*xyz_L,in_channels_dir=3+6*dir_L)
+            self.nerf_fine = NeRF()
+            self.models['fine'] = self.nerf_fine.cuda()
 
     def get_progress_bar_dict(self):
         items = super().get_progress_bar_dict()
@@ -88,12 +91,13 @@ class NeRFSystem(LightningModule):
     def prepare_data(self):
         self.train_dataset = NerfData(self.hparams.image_dir,self.hparams.img_width,self.hparams.img_height,'train')
         self.val_dataset = NerfData(self.hparams.image_dir,self.hparams.img_width,self.hparams.img_height,'val')
-
-    def configure_optimizers(self):
-        self.optimizer = AdamW(list(self.models['coarse'].parameters()) \
-            + list(self.models['fine'].parameters()),lr = hparams.lr)
-        lr_sched = lr_scheduler.ExponentialLR(self.optimizer,gamma = 1e-5)
         
+    def configure_optimizers(self):
+        self.optimizer = Adam(list(self.models['coarse'].parameters()) \
+            + list(self.models['fine'].parameters()),lr = hparams.lr)
+        # lr_sched = lr_scheduler.ExponentialLR(self.optimizer,gamma = 1e-5)
+        # lr_sched = lr_scheduler.StepLR(self.optimizer,gamma = 1e-5,step_size=20)
+        lr_sched = lr_scheduler.CosineAnnealingLR(self.optimizer,T_max=self.hparams.num_epochs, eta_min=1e-8)
         return [self.optimizer], [lr_sched]
 
     def train_dataloader(self):

@@ -3,14 +3,15 @@ from torch import nn
 
 
 class PosEmbedding(nn.Module):
-	def __init__(self,max_logscale,N_freqs,logscale=True):
+	def __init__(self,in_channels,N_freqs,logscale=True):
 		super(PosEmbedding,self).__init__()
 		self.functions = [torch.sin,torch.cos]
-
+		self.in_channels = in_channels
+		self.out_channels = in_channels*(len(self.functions)*N_freqs+1)
 		if logscale:
-			self.freqs = 2**torch.linspace(0,max_logscale,N_freqs)
+			self.freqs = 2**torch.linspace(0,N_freqs-1,N_freqs)
 		else:
-			self.freqs = torch.linspace(1,2**max_logscale,N_freqs)
+			self.freqs = torch.linspace(1,2**(N_freqs-1),N_freqs)
 
 	def forward(self,x):
 		"""
@@ -32,86 +33,90 @@ class PosEmbedding(nn.Module):
 
 
 class NeRF(nn.Module):
+    def __init__(self,
+                 D=8, W=256,
+                 in_channels_xyz=63, in_channels_dir=27, 
+                 skips=[4]):
+        """
+        D: number of layers for density (sigma) encoder
+        W: number of hidden units in each layer
+        in_channels_xyz: number of input channels for xyz (3+3*10*2=63 by default)
+        in_channels_dir: number of input channels for direction (3+3*4*2=27 by default)
+        skips: add skip connection in the Dth layer
+        """
+        super(NeRF, self).__init__()
+        self.D = D
+        self.W = W
+        self.in_channels_xyz = in_channels_xyz
+        self.in_channels_dir = in_channels_dir
+        self.skips = skips
+        
 
-	def __init__(self,types,density,width,skips,in_channels_xyz,in_channels_dir):
-		"""
-		types = "coarse", "fine"
-		density = no of layers for density (sigma) encoder
-		width = no of hidden units in each layer
-		skips = add skip connection in Dth layer
-		in_channels_xyz = no of input channels for xyz 3 + 6*10 = 63
-		in_channels_dir = no of input_channels for dir 3 + 6*4 = 27
-		"""
-		super(NeRF,self).__init__()
-		self.types = types
-		self.density = density
-		self.width = width
-		self.skips = skips
-		self.in_channels_xyz = in_channels_xyz
-		self.in_channels_dir = in_channels_dir
+        # xyz encoding layers
+        for i in range(D):
+            if i == 0:
+                layer = nn.Linear(in_channels_xyz, W)
+            elif i in skips:
+                layer = nn.Linear(W+in_channels_xyz, W)
+            else:
+                layer = nn.Linear(W, W)
+            layer = nn.Sequential(layer, nn.ReLU(True))
+            setattr(self, f"xyz_encoding_{i+1}", layer)
+        self.xyz_encoding_final = nn.Linear(W, W)
 
-		"""
-		The network architecture is 4-5 layers with input being Pos(x)
-		and at the 4th layer adding Pos(x) again. 2 layers later we add
-		encoded Pos(dir) and get the final color 
-		"""
+        # direction encoding layers
+        self.dir_encoding = nn.Sequential(
+                                nn.Linear(W+in_channels_dir, W//2),
+                                nn.ReLU(True))
 
-		# encode xyz
-		for i in range(self.density):
-			if i == 0:
-				layer = nn.Linear(in_channels_xyz,width)
-			elif i in skips:
-				layer = nn.Linear(width+in_channels_xyz,width)
-			else :
-				layer = nn.Linear(width,width)
-			layer = nn.Sequential(layer,nn.ReLU(True))
-			setattr(self,f'xyz_encoding_{i+1}',layer)
-		
-		self.xyz_encoding_final = nn.Linear(width,width)
+        # output layers
+        self.sigma = nn.Linear(W, 1)
+        self.rgb = nn.Sequential(
+                        nn.Linear(W//2, 3),
+                        nn.Sigmoid())
 
-		#encode dir
-		self.dir_encoding = nn.Sequential(
-								nn.Linear(width+in_channels_dir,width//2),nn.ReLU(True))
-		self.sigma = nn.Sequential(nn.Linear(width,1),nn.Softplus())
-		self.rgb = nn.Sequential(nn.Linear(width//2,3),nn.Sigmoid())
+    def forward(self, x, sigma_only=False):
+        """
+        Encodes input (xyz+dir) to rgb+sigma (not ready to render yet).
+        For rendering this ray, please see rendering.py
 
-	def forward(self,x,sigma_only = False):
-		"""
-		Encodes x and dir
-		Input:
-			x : Pos(x,y,z) and Direction (The ray directions are the dir)
-			sigma_only : return only sigma
-		Outputs (concatenated):
-			rgb and sigma (Batch,4)
-		Render this ray in rendering.py
-		Sigma is the output of the second last layer while rgb is the final output
-		"""
-		if sigma_only:
-			input_xyz = x
-		else:
-			input_xyz, input_dir = torch.split(x,[self.in_channels_xyz,self.in_channels_dir],-1)
+        Inputs:
+            x: (B, self.in_channels_xyz(+self.in_channels_dir))
+               the embedded vector of position and direction
+            sigma_only: whether to infer sigma only. If True,
+                        x is of shape (B, self.in_channels_xyz)
 
-		xyz_ = input_xyz
+        Outputs:
+            if sigma_ony:
+                sigma: (B, 1) sigma
+            else:
+                out: (B, 4), rgb and sigma
+        """
+        if not sigma_only:
+            input_xyz, input_dir = \
+                torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
+        else:
+            input_xyz = x
 
-		for i in range(self.density):
-			if i in self.skips:
-				xyz_ = torch.cat([input_xyz,xyz_],dim=-1)
-			xyz_ = getattr(self,f'xyz_encoding_{i+1}')(xyz_)
+        xyz_ = input_xyz
+        for i in range(self.D):
+            if i in self.skips:
+                xyz_ = torch.cat([input_xyz, xyz_], -1)
+            xyz_ = getattr(self, f"xyz_encoding_{i+1}")(xyz_)
 
-		sigma = self.sigma(xyz_) # (B,1)
-		# print(sigma.shape)
-		if sigma_only:
-			return sigma
-		xyz_encoding_final = self.xyz_encoding_final(xyz_)
+        sigma = self.sigma(xyz_)
+        if sigma_only:
+            return sigma
 
-		dir_encoding_input = torch.cat([xyz_encoding_final,input_dir],-1)
-		dir_encoding = self.dir_encoding(dir_encoding_input)
+        xyz_encoding_final = self.xyz_encoding_final(xyz_)
 
-		rgb = self.rgb(dir_encoding) #(B,3)
-		# print(rgb.shape)
-		output = torch.cat([rgb,sigma],-1) #(B,4)
+        dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
+        dir_encoding = self.dir_encoding(dir_encoding_input)
+        rgb = self.rgb(dir_encoding)
 
-		return output
+        out = torch.cat([rgb, sigma], -1)
+
+        return out
 
 if __name__ == '__main__':
 	batch = 1024
